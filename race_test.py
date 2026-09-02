@@ -15,6 +15,7 @@ Usage:
 import argparse
 import asyncio
 import httpx
+import uuid
 
 
 async def fire_one(client: httpx.AsyncClient, url: str, payload: dict):
@@ -27,11 +28,13 @@ async def fire_one(client: httpx.AsyncClient, url: str, payload: dict):
 
 
 async def main(n: int, url: str):
+    fresh_key = f"race-test-{uuid.uuid4()}"
     payload = {
-        "idempotency_key": "race-test-key-001",  # SAME key every time, on purpose
+        "idempotency_key": fresh_key,
         "user_id": "user-42",
         "amount_cents": 50000,
     }
+    
 
     async with httpx.AsyncClient() as client:
         results = await asyncio.gather(*[fire_one(client, url, payload) for _ in range(n)])

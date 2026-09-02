@@ -1,49 +1,106 @@
-name: CI
+name: Payment API CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - master
   pull_request:
-    branches: [main]
 
 jobs:
-  test:
+  end-to-end-tests:
+    name: End-to-end tests
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: payments
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
+    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.12"
+          cache: pip
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Load database schema
-        run: PGPASSWORD=postgres psql -h localhost -U postgres -d payments -f app/schema.sql
-
-      - name: Start the API
+      - name: Install test dependencies
         run: |
-          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/payments \
-          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 3
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest pytest-asyncio httpx
 
-      - name: Run race condition test
-        run: python race_test.py --n 100
+      - name: Create environment file
+        run: cp .env.example .env
+
+      - name: Build and start services
+        run: docker compose up -d --build
+
+      - name: Wait for PostgreSQL
+        run: |
+          for attempt in {1..30}; do
+            if docker compose exec -T db \
+              pg_isready -U postgres -d payments
+            then
+              exit 0
+            fi
+
+            echo "Waiting for PostgreSQL: attempt $attempt"
+            sleep 2
+          done
+
+          echo "PostgreSQL did not become ready"
+          exit 1
+
+      - name: Apply refund migration
+        run: |
+          docker compose exec -T db \
+            psql -U postgres -d payments \
+            < migrations/004_create_refunds.sql
+
+      - name: Wait for API
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent \
+              http://localhost:8000/health/live
+            then
+              exit 0
+            fi
+
+            echo "Waiting for API: attempt $attempt"
+            sleep 2
+          done
+
+          echo "API did not become ready"
+          exit 1
+
+      - name: Check API readiness
+        run: |
+          curl --fail --show-error \
+            http://localhost:8000/health/ready
+
+      - name: Run end-to-end tests
+        env:
+          TEST_API_URL: http://localhost:8000
+          TEST_API_KEY: merchant-development-key
+        run: |
+          python -m pytest \
+            -v \
+            -s \
+            tests/test_end_to_end.py
+
+      - name: Show service logs after failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs \
+            --tail=300 \
+            api \
+            celery-worker \
+            celery-beat \
+            provider-simulator \
+            db \
+            redis
+
+      - name: Stop services
+        if: always()
+        run: docker compose down -v

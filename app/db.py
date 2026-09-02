@@ -1,27 +1,51 @@
-import os
+from contextlib import contextmanager
+from typing import Generator
+
+from psycopg import Connection
+from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-# A connection POOL (not a single connection) lets FastAPI handle many
-# requests at once -- each request borrows a connection, uses it,
-# returns it, instead of every request fighting over one connection.
+from app.core.config import settings
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://localhost/payments",  # matches macOS Homebrew default
-)
 
 _pool: ConnectionPool | None = None
 
 
 def get_pool() -> ConnectionPool:
     global _pool
+
     if _pool is None:
-        _pool = ConnectionPool(DATABASE_URL, min_size=1, max_size=10, open=True)
+        _pool = ConnectionPool(
+            conninfo=settings.database_url,
+            min_size=1,
+            max_size=10,
+            open=True,
+            kwargs={"row_factory": dict_row},
+        )
+
     return _pool
 
 
-def close_pool():
+@contextmanager
+def get_connection() -> Generator[Connection, None, None]:
+    pool = get_pool()
+
+    with pool.connection() as connection:
+        yield connection
+
+
+def close_pool() -> None:
     global _pool
+
     if _pool is not None:
         _pool.close()
         _pool = None
+
+
+def database_is_ready() -> bool:
+    try:
+        with get_connection() as connection:
+            result = connection.execute("SELECT 1 AS ready").fetchone()
+            return result is not None and result["ready"] == 1
+    except Exception:
+        return False

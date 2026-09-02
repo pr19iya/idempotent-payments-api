@@ -8,19 +8,93 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./app/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - postgres_data:/var/lib/postgresql/data
+      - ./app/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d payments"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  provider-simulator:
+    build: .
+    command: >
+      uvicorn provider_simulator.main:app
+      --host 0.0.0.0
+      --port 8001
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
 
   api:
     build: .
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
     ports:
       - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/payments
+    env_file:
+      - .env
+    volumes:
+      - .:/app
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      provider-simulator:
+        condition: service_started
+
+  celery-worker:
+    build: .
+    command: >
+      celery -A app.workers.celery_app.celery_app worker
+      --loglevel=info
+      --concurrency=2
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      provider-simulator:
+        condition: service_started
+
+  celery-beat:
+    build: .
+    command: >
+      celery -A app.workers.celery_app.celery_app beat
+      --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+       
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
