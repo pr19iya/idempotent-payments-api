@@ -8,6 +8,10 @@ It uses a provider simulator so that successful payments, declines, timeouts, du
 
 > This is a portfolio and learning project. It does not process real money or store card details.
 
+- **Swagger API:**[Payflow API] https://payflow-api-wupu.onrender.com/docs#/Refunds/retrieve_refund_v1_refunds__refund_id__get
+  
+-  **Readiness Check:** [Service Health] https://payflow-api-wupu.onrender.com/health/ready
+
 ---
 
 ## Why I built this
@@ -817,7 +821,7 @@ The final command permanently deletes local container data.
 - ✅ End-to-end automated tests
 - ✅ Locust performance tests
 - ✅ GitHub Actions CI
-- 🚧 Public deployment in progress
+-✅ Public deployment available
 
 ---
 
