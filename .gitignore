@@ -6,3 +6,6 @@ __pycache__/
 htmlcov/
 *.pyc
 .DS_Store
+celerybeat-schedule
+celerybeat-schedule-shm
+celerybeat-schedule-wal

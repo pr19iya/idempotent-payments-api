@@ -139,12 +139,15 @@ def create_refund(
             (payment_id,),
         ).fetchone()
 
-        reserved_amount = refund_totals[
-            "reserved_amount"
-        ]
-        refundable_amount = (
-            payment["amount_cents"] - reserved_amount
-        )
+        # reserved_amount = refund_totals[
+        #     "reserved_amount"
+        # ]
+        # refundable_amount = (
+        #     payment["amount_cents"] - reserved_amount
+        # )
+        reserved_amount = int(refund_totals["reserved_amount"])      
+        refundable_amount = (payment["amount_cents"] - reserved_amount)
+
 
         if request.amount_cents > refundable_amount:
             raise HTTPException(

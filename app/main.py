@@ -8,7 +8,8 @@ from app.db import close_pool
 from app.api.refunds import router as refunds_router
 from app.core.middleware import RequestContextMiddleware
 from app.core.rate_limit import RateLimitMiddleware
-
+from app.api.metrics import router as metrics_router
+from app.core.metrics import setup_metrics
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
@@ -34,6 +35,11 @@ app.add_middleware(RequestContextMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(RateLimitMiddleware)
+app.include_router(metrics_router)
+
+setup_metrics(app)
+
+
 @app.get("/", tags=["Root"])
 def root() -> dict:
     return {

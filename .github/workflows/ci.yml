@@ -29,6 +29,11 @@ jobs:
           python -m pip install -r requirements-dev.txt
       - name: Create environment file
         run: cp .env.example .env
+      - name: Increase rate limit for end-to-end tests
+        run: |
+          sed -i \
+           s/^RATE_LIMIT_REQUESTS=.*/RATE_LIMIT_REQUESTS=1000/' \
+            .env
 
       - name: Build and start services
         run: docker compose up -d --build

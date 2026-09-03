@@ -2,26 +2,51 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Response,
+    status,
+)
 from pydantic import BaseModel, Field, field_validator
-from fastapi import HTTPException
-from app.db import get_connection
+
 from app.core.security import authenticate_merchant
-from app.services.payment_service import create_idempotent_payment
-from typing import Literal
+from app.db import get_connection
+from app.services.payment_service import (
+    create_idempotent_payment,
+)
 from app.workers.tasks import process_payment
 
-router = APIRouter(prefix="/v1/payments", tags=["Payments"])
+
+router = APIRouter(
+    prefix="/v1/payments",
+    tags=["Payments"],
+)
 
 
 class PaymentRequest(BaseModel):
-    user_id: str = Field(min_length=1, max_length=100)
-    amount_cents: int = Field(gt=0, le=100_000_000)
-    currency: str = Field(default="INR", min_length=3, max_length=3)
+    user_id: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    amount_cents: int = Field(
+        gt=0,
+        le=100_000_000,
+    )
+    currency: str = Field(
+        default="INR",
+        min_length=3,
+        max_length=3,
+    )
 
     @field_validator("currency")
     @classmethod
-    def normalize_currency(cls, value: str) -> str:
+    def normalize_currency(
+        cls,
+        value: str,
+    ) -> str:
         return value.upper()
 
 
@@ -60,18 +85,22 @@ def create_payment(
         min_length=8,
         max_length=255,
     ),
-    merchant_id: str = Depends(authenticate_merchant),
+    merchant_id: str = Depends(
+        authenticate_merchant
+    ),
     x_test_scenario: Literal[
-    "success",
-    "declined",
-    "timeout",
-    "server_error",
-    "delayed_success",
-    "delayed_webhook",
-    "duplicate_webhook"
-    "lost_webhook"
-] = Header(default="success", alias="X-Test-Scenario"),
-
+        "success",
+        "declined",
+        "timeout",
+        "server_error",
+        "delayed_success",
+        "delayed_webhook",
+        "duplicate_webhook",
+        "lost_webhook",
+    ] = Header(
+        default="success",
+        alias="X-Test-Scenario",
+    ),
 ) -> PaymentResponse:
     payment, duplicate = create_idempotent_payment(
         merchant_id=merchant_id,
@@ -80,27 +109,32 @@ def create_payment(
         amount_cents=request.amount_cents,
         currency=request.currency,
     )
+
     if not duplicate:
         process_payment.delay(
-        str(payment["id"]),
-        x_test_scenario,
-    )
+            str(payment["id"]),
+            x_test_scenario,
+        )
 
     if duplicate:
         response.status_code = status.HTTP_200_OK
-        response.headers["Idempotent-Replayed"] = "true"
+        response.headers[
+            "Idempotent-Replayed"
+        ] = "true"
     else:
-        response.headers["Idempotent-Replayed"] = "false"
+        response.headers[
+            "Idempotent-Replayed"
+        ] = "false"
 
     return PaymentResponse(**payment)
-
-
 
 
 @router.get("/{payment_id}")
 def retrieve_payment(
     payment_id: UUID,
-    merchant_id: str = Depends(authenticate_merchant),
+    merchant_id: str = Depends(
+        authenticate_merchant
+    ),
 ) -> dict:
     with get_connection() as connection:
         payment = connection.execute(
@@ -128,7 +162,7 @@ def retrieve_payment(
 
     if payment is None:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Payment not found",
         )
 
@@ -138,7 +172,9 @@ def retrieve_payment(
 @router.get("/{payment_id}/events")
 def retrieve_payment_events(
     payment_id: UUID,
-    merchant_id: str = Depends(authenticate_merchant),
+    merchant_id: str = Depends(
+        authenticate_merchant
+    ),
 ) -> dict:
     with get_connection() as connection:
         payment = connection.execute(
@@ -153,7 +189,7 @@ def retrieve_payment_events(
 
         if payment is None:
             raise HTTPException(
-                status_code=404,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail="Payment not found",
             )
 
